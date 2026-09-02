@@ -2,7 +2,9 @@ streamlit
 pandas
 numpy
 scikit-learn
-joblib
 groq
 pypdf
 spacy
+langchain-groq
+langchain
+python-dotenv
