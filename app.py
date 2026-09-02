@@ -57,18 +57,34 @@ with tab1:
                 
                 try:
                     text = extract_text_from_pdf(tmp_path)
-                    if not text:
-                        st.error("Could not extract text from PDF.")
+                    
+                    # Clean the text to remove invisible whitespace
+                    clean_text = text.strip() if text else ""
+                    
+                    # Check if we actually extracted readable words
+                    if len(clean_text) < 50:
+                        st.error(f"⚠️ PDF Extraction Failed: Only found {len(clean_text)} readable characters. If this is a scanned document or image, the AI cannot read it.")
+                        st.text_area("What the AI saw:", clean_text, height=100)
                     else:
-                        clause_analysis = analyze_contract(text)
-                        summary = summarize_contract(text)
+                        # DEBUG VISUALIZER
+                        with st.expander("👀 Debug: View Raw Extracted Text (Check if this is gibberish)"):
+                            st.write(clean_text[:1500] + "...\n\n(Text truncated for preview)")
+                        
+                        # Proceed with analysis
+                        clause_analysis = analyze_contract(clean_text)
+                        summary = summarize_contract(clean_text)
                         
                         st.session_state.analysis_result = {
                             "clause_analysis": clause_analysis,
                             "summary": summary
                         }
                 except Exception as e:
-                    st.error(f"Analysis failed: {str(e)}")
+                    error_msg = str(e)
+                    if "shape=(0, 5000)" in error_msg:
+                        st.error("❌ Machine Learning Error: The backend extracted the text, but found 0 valid clauses to analyze.")
+                        st.warning("Please check the 'Debug: View Raw Extracted Text' dropdown above. If the text looks like random symbols or lacks punctuation, your backend's sentence splitter is failing to process it.")
+                    else:
+                        st.error(f"Analysis failed: {error_msg}")
                 finally:
                     os.remove(tmp_path)
 
