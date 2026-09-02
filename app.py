@@ -57,11 +57,19 @@ with tab1:
                 
                 try:
                     text = extract_text_from_pdf(tmp_path)
-                    if not text:
-                        st.error("Could not extract text from PDF.")
+                    
+                    # Clean the text to remove invisible whitespace
+                    clean_text = text.strip() if text else ""
+                    
+                    # Check if we actually extracted readable words
+                    if len(clean_text) < 50:
+                        st.error(f"⚠️ PDF Extraction Failed: Only found {len(clean_text)} readable characters. If this is a scanned document or image, the AI cannot read it.")
+                        # Show exactly what it tried to extract
+                        st.text_area("What the AI saw:", clean_text, height=100)
                     else:
-                        clause_analysis = analyze_contract(text)
-                        summary = summarize_contract(text)
+                        # Proceed with analysis
+                        clause_analysis = analyze_contract(clean_text)
+                        summary = summarize_contract(clean_text)
                         
                         st.session_state.analysis_result = {
                             "clause_analysis": clause_analysis,
