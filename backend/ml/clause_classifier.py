@@ -1,13 +1,9 @@
 import joblib
 import numpy as np
-import pandas as pd
-from sklearn.svm import LinearSVC
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.model_selection import train_test_split
 import os
 
-TFIDF_PATH = "models/legal_tfidf.pkl"
+MODELS_DIR = "models"
+TFIDF_PATH = os.path.join(MODELS_DIR, "legal_tfidf.pkl")
 
 RISK_CLAUSES = {
     'Non-Compete': 'HIGH',
@@ -45,12 +41,37 @@ CLAUSE_DESCRIPTIONS = {
     'No-Solicit Of Employees': 'Prevents hiring employees from the other party.'
 }
 
-def load_tfidf():
-    if os.path.exists(TFIDF_PATH):
-        return joblib.load(TFIDF_PATH)
-    return None
+CLAUSE_TO_FILE = {
+    'Non-Compete': 'non-compete_model.pkl',
+    'Exclusivity': 'exclusivity_model.pkl',
+    'Termination For Convenience': 'termination_for_convenience_model.pkl',
+    'Change Of Control': 'change_of_control_model.pkl',
+    'Anti-Assignment': 'anti-assignment_model.pkl',
+    'Ip Ownership Assignment': 'ip_ownership_assignment_model.pkl',
+    'License Grant': 'license_grant_model.pkl',
+    'Cap On Liability': 'cap_on_liability_model.pkl',
+    'Uncapped Liability': 'uncapped_liability_model.pkl',
+    'Audit Rights': 'audit_rights_model.pkl',
+    'Insurance': 'insurance_model.pkl',
+    'Liquidated Damages': 'liquidated_damages_model.pkl',
+    'Warranty Duration': 'warranty_duration_model.pkl',
+    'Non-Disparagement': 'non-disparagement_model.pkl',
+    'No-Solicit Of Employees': 'no-solicit_of_employees_model.pkl'
+}
 
-def calculate_risk_score(detected_clauses: list) -> dict:
+def load_tfidf():
+    return joblib.load(TFIDF_PATH)
+
+def load_clause_model(clause):
+    filename = CLAUSE_TO_FILE.get(clause)
+    if not filename:
+        return None
+    path = os.path.join(MODELS_DIR, filename)
+    if not os.path.exists(path):
+        return None
+    return joblib.load(path)
+
+def calculate_risk_score(detected_clauses):
     score = 0
     for clause in detected_clauses:
         risk = RISK_CLAUSES.get(clause, 'LOW')
@@ -66,76 +87,41 @@ def calculate_risk_score(detected_clauses: list) -> dict:
 
     if normalized >= 60:
         level = "HIGH RISK"
-        color = "red"
     elif normalized >= 35:
         level = "MEDIUM RISK"
-        color = "orange"
     else:
         level = "LOW RISK"
-        color = "green"
 
-    return {
-        "score": round(normalized, 1),
-        "level": level,
-        "color": color,
-        "raw_score": score
-    }
+    return {"score": round(normalized, 1), "level": level, "raw_score": score}
 
-def analyze_contract(text: str) -> dict:
-    tfidf = load_tfidf()
-    if tfidf is None:
-        return {"error": "Model not loaded. Run training script first."}
+def analyze_contract(text):
+    try:
+        tfidf = load_tfidf()
+    except Exception as e:
+        return {"error": f"TF-IDF model not found: {str(e)}"}
 
-    # Load all clause models and predict
-    df = pd.read_csv("data/master_clauses.csv")
-
-    target_clauses = list(RISK_CLAUSES.keys())
-    answer_cols = [f"{c}-Answer" for c in target_clauses]
-
-    # Load contract texts for training
-    contract_texts = []
-    txt_folder = "data/full_contract_txt"
-    for filename in df['Filename']:
-        base = filename.replace('.pdf', '.txt')
-        full_path = os.path.join(txt_folder, base)
-        if os.path.exists(full_path):
-            with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
-                contract_texts.append(f.read()[:3000])
-        else:
-            contract_texts.append("")
-
-    df['contract_text'] = contract_texts
-    df_valid = df[df['contract_text'].str.len() > 100].copy()
-
-    X_all = tfidf.transform(df_valid['contract_text'])
     X_new = tfidf.transform([text[:3000]])
 
     detected_clauses = []
     clause_details = []
 
-    for clause in target_clauses:
-        col = f"{clause}-Answer"
-        if col not in df_valid.columns:
+    for clause in RISK_CLAUSES.keys():
+        model = load_clause_model(clause)
+        if model is None:
             continue
-
-        y = (df_valid[col].astype(str).str.lower() == 'yes').astype(int)
-        if y.sum() < 5:
+        try:
+            pred = model.predict(X_new)[0]
+            prob = model.predict_proba(X_new)[0][1]
+            if pred == 1:
+                detected_clauses.append(clause)
+                clause_details.append({
+                    "clause": clause,
+                    "risk_level": RISK_CLAUSES.get(clause, 'LOW'),
+                    "confidence": round(float(prob) * 100, 1),
+                    "description": CLAUSE_DESCRIPTIONS.get(clause, "")
+                })
+        except:
             continue
-
-        model = CalibratedClassifierCV(LinearSVC(C=1.0, max_iter=2000))
-        model.fit(X_all, y)
-
-        pred = model.predict(X_new)[0]
-        prob = model.predict_proba(X_new)[0][1]
-
-        if pred == 1:
-            detected_clauses.append(clause)
-            clause_details.append({
-                "clause": clause,
-                "risk_level": RISK_CLAUSES.get(clause, 'LOW'),
-                "confidence": round(float(prob) * 100, 1),
-                "description": CLAUSE_DESCRIPTIONS.get(clause, "")
-            })
 
     risk_score = calculate_risk_score(detected_clauses)
 
