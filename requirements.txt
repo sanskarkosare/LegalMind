@@ -7,3 +7,4 @@ pypdf
 spacy
 langchain-groq
 langchain
+python-dotenv
