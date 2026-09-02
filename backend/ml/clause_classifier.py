@@ -100,7 +100,24 @@ def analyze_contract(text):
     except Exception as e:
         return {"error": f"TF-IDF model not found: {str(e)}"}
 
-    X_new = tfidf.transform([text[:3000]])
+    # Ensure text is valid and safe to transform
+    if not text or not isinstance(text, str):
+        text = "Empty contract document."
+
+    try:
+        # Transform the text safely
+        X_new = tfidf.transform([text[:3000]])
+    except Exception as e:
+        # Fallback if vectorization fails due to empty vocabulary match
+        return {
+            "error": f"Vectorization failed: {str(e)}",
+            "detected_clauses": [],
+            "risk_score": {"score": 0, "level": "LOW RISK"},
+            "total_clauses_found": 0,
+            "high_risk_count": 0,
+            "medium_risk_count": 0,
+            "low_risk_count": 0
+        }
 
     detected_clauses = []
     clause_details = []
